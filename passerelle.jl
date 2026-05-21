@@ -1,12 +1,8 @@
-# ==========================================
-# Fichier : passerelle.jl
-# ==========================================
 using Pkg
 Pkg.activate(".") 
 
 using SynapseElife, Random, PiecewiseDeterministicMarkovProcesses, Sundials
 
-# On définit bien les noms des arguments ici !
 function simuler_synapse_brute(param_gamma_ampa, param_gamma_nmda)
     data_protocol = dataProtocol("TigaretMellor16")
     k = 8
@@ -39,7 +35,6 @@ function simuler_synapse_brute(param_gamma_ampa, param_gamma_nmda)
         I_clamp       = data_protocol[!,:injection][k],
         sampling_rate = 10.0,
         
-        # Injection : on utilise les mêmes noms que les arguments en haut
         gamma_ampa1   = param_gamma_ampa,
         gamma_ampa2   = param_gamma_ampa,
         gamma_ampa3   = param_gamma_ampa,
