@@ -3,7 +3,7 @@ Pkg.activate(".")
 
 using SynapseElife, Random, PiecewiseDeterministicMarkovProcesses, Sundials
 
-function simuler_synapse_brute(param_gamma_ampa, param_gamma_nmda)
+function simuler_synapse_brute(val_ampa, val_nmda)
     data_protocol = dataProtocol("TigaretMellor16")
     k = 8
     pls = 1
@@ -35,10 +35,10 @@ function simuler_synapse_brute(param_gamma_ampa, param_gamma_nmda)
         I_clamp       = data_protocol[!,:injection][k],
         sampling_rate = 10.0,
         
-        gamma_ampa1   = param_gamma_ampa,
-        gamma_ampa2   = param_gamma_ampa,
-        gamma_ampa3   = param_gamma_ampa,
-        gamma_nmda    = param_gamma_nmda
+        gamma_ampa1   = val_ampa,
+        gamma_ampa2   = val_ampa,
+        gamma_ampa3   = val_ampa,
+        gamma_nmda    = val_nmda
     )
 
     xc0 = initial_conditions_continuous_temp(param_synapse)
@@ -61,5 +61,5 @@ function simuler_synapse_brute(param_gamma_ampa, param_gamma_nmda)
 
     out = SynapseElife.get_names(result.XC, result.XD)
     
-    return Vector(result.t), Vector(out[:Vsp])
+    return Vector(result.t), Vector(out[:Vsp]), Vector(out[:Ca])
 end
