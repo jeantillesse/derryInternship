@@ -3,9 +3,9 @@ Pkg.activate(".")
 
 using SynapseElife, Random, PiecewiseDeterministicMarkovProcesses, Sundials
 
-function simuler_synapse_brute(val_ampa, val_nmda)
+function simuler_synapse_brute(val_n_ampa, val_n_nmda, val_n_vgcc, val_l_neck, k_protocole)
     data_protocol = dataProtocol("TigaretMellor16")
-    k = 8
+    k = k_protocole
     pls = 1
     start = 0.5e3
 
@@ -35,10 +35,12 @@ function simuler_synapse_brute(val_ampa, val_nmda)
         I_clamp       = data_protocol[!,:injection][k],
         sampling_rate = 10.0,
         
-        gamma_ampa1   = val_ampa,
-        gamma_ampa2   = val_ampa,
-        gamma_ampa3   = val_ampa,
-        gamma_nmda    = val_nmda
+        N_ampa = round(Int, val_n_ampa),
+        N_NMDA = round(Int, val_n_nmda),
+        N_caT  = round(Int, val_n_vgcc),
+        N_caR  = round(Int, val_n_vgcc),
+        N_caL  = round(Int, val_n_vgcc),
+        L_neck = val_l_neck
     )
 
     xc0 = initial_conditions_continuous_temp(param_synapse)
@@ -60,6 +62,15 @@ function simuler_synapse_brute(val_ampa, val_nmda)
     )
 
     out = SynapseElife.get_names(result.XC, result.XD)
-    
-    return Vector(result.t), Vector(out[:Vsp]), Vector(out[:Ca])
+    # 1. On récupère la toute dernière valeur (à la fin du protocole) de act_P et act_D
+    act_D_final = result.XC[27, end]
+    act_P_final = result.XC[28, end]
+
+    # 2. Formule de test (Readout fictif)
+    delta_W = 1.0 + (0.05 * act_P_final) - (0.02 * act_D_final)
+
+    # 3. Sécurité biologique
+    delta_W = max(0.1, delta_W)
+
+    return delta_W
 end
