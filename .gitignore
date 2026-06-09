@@ -1,2 +1,4 @@
 env_sbi/
 __pycache__/
+.CondaPkg/
+sbi-logs/
