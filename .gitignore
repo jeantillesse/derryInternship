@@ -2,3 +2,5 @@ env_sbi/
 __pycache__/
 .CondaPkg/
 sbi-logs/
+Manifest.toml
+Project.toml
