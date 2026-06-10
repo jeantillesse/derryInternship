@@ -1,13 +1,22 @@
 import argparse
 import os
 import pickle
+
+# Configuration des variables d'environnement pour Julia (AVANT les imports)
+os.environ["JULIA_NUM_THREADS"] = "auto"
+os.environ["PYTHON_JULIACALL_HANDLE_SIGNALS"] = "yes"
+
+# 1. IMPORTER JULIACALL EN TOUT PREMIER (Évite les Segfaults avec Torch)
+from juliacall import Main as jl
+
+# 2. Importer le reste des packages
 import torch
 import numpy as np
 
 def get_args():
     parser = argparse.ArgumentParser(description="Générateur de simulations en parallèle (Job Array)")
     parser.add_argument("--task_id", type=int, required=True, help="ID de la tâche SLURM (SLURM_ARRAY_TASK_ID)")
-    parser.add_argument("--nb_sims", type=int, default=10, help="Nombre de simulations à générer pour cette tâche")
+    parser.add_argument("--nb_sims", type=int, default=12, help="Nombre de simulations à générer pour cette tâche")
     parser.add_argument("--gauss", action="store_true", help="Le prior est une gausienne")
     parser.add_argument("--box", action="store_true", help="Le prior est une Box uniforme")
     parser.add_argument("--nb_protocoles", type=int, default=7, choices=range(1, 8), help="Nombre de protocoles à tester (1 à 7)")
@@ -17,19 +26,14 @@ def get_args():
 def main():
     args = get_args()
     
-    # 1. Configuration des graines aléatoires uniques
+    # Configuration des graines aléatoires uniques
     base_seed = 42000
     unique_seed = base_seed + args.task_id
     
     torch.manual_seed(unique_seed)
     np.random.seed(unique_seed)
     
-    # Configuration des variables d'environnement pour Julia
-    os.environ["JULIA_NUM_THREADS"] = "auto"
-    os.environ["PYTHON_JULIACALL_HANDLE_SIGNALS"] = "yes"
-    
-    # 2. Importer JuliaCall et initialiser le seed Julia
-    from juliacall import Main as jl
+    # Initialiser le seed Julia
     jl.seval(f"using Random; Random.seed!({unique_seed})")
     
     # Charger les modules et fonctions Julia
@@ -38,7 +42,7 @@ def main():
     from sbi.utils import BoxUniform
     from torch.distributions import MultivariateNormal, TransformedDistribution, ExpTransform
     
-    # 3. Définir le prior
+    # Définir le prior
     if not args.gauss and not args.box:
         args.box = True
         
@@ -55,7 +59,6 @@ def main():
         prior = TransformedDistribution(base_dist, ExpTransform())
 
     # Stratégie de parallélisation Julia interne (multi-threading sur le lot)
-    # On utilise ParallelStrategy car cpus-per-task > 1
     USE_MULTITHREAD = True
     
     def simulateur_sbi_hybride(theta, start_sim_idx=1):

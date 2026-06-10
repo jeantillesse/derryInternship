@@ -1,5 +1,5 @@
 using Pkg
-Pkg.activate(".") 
+Pkg.activate("..") 
 
 using SynapseElife, Random, PiecewiseDeterministicMarkovProcesses, Sundials, Statistics, Distributions
 
