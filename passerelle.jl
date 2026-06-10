@@ -152,102 +152,126 @@ function simuler_synapse_brute(val_n_ampa, val_n_nmda, val_n_caT, val_n_caR, val
         return NaN
     end
 end
-const N_SWEEPS = 10
-const SIMULATION_COUNTER = Threads.Atomic{Int}(0)
 
-function simulateur_complet_sbi_multithread(params; nb_protocoles=7, n_sweeps=N_SWEEPS, sim_idx=0)
-    if length(params) == 4
-        val_ampa, val_nmda, val_ca, val_neck = params
-        val_caT = val_ca
-        val_caR = val_ca
-        val_caL = val_ca
-    else
-        val_ampa, val_nmda, val_caT, val_caR, val_caL, val_neck = params
-    end
+# -------------------------------------------------------------
+# PATRON DE CONCEPTION : STRATÉGIE (Strategy Pattern)
+# -------------------------------------------------------------
+# Nous utilisons le patron de conception "Stratégie" combiné au dispatch
+# multiple de Julia pour définir et interchanger les modes d'exécution.
+# Cela permet d'avoir un unique point d'entrée `simulateur_sbi` tout en gardant
+# une séparation nette entre l'exécution monothread (séquentielle) et multithread (parallèle).
+abstract type ExecutionStrategy end
+struct SequentialStrategy <: ExecutionStrategy end
+struct ParallelStrategy <: ExecutionStrategy end
+
+# 1. Stratégie Parallèle (Multi-thread plat sur l'ensemble du lot)
+function simulateur_sbi(::ParallelStrategy, batch_params; nb_protocoles=7, n_sweeps=N_SWEEPS, start_sim_idx=1)
+    # Conversion en types natifs Julia pour éviter le lock GIL de Python dans les threads
+    native_batch = [Vector{Float64}(p) for p in batch_params]
+    num_thetas = length(native_batch)
+    println("\n=== [Parallel Sim] Début du lot avec $num_thetas jeux de paramètres (Simulations #$start_sim_idx à #$(start_sim_idx + num_thetas - 1)) ===")
     
-    vecteur_cible = Float64[]
-    
-    # Pre-allocation d'une matrice pour stocker les résultats : lignes = sweeps, colonnes = protocoles
-    changements_de_poids = zeros(Float64, n_sweeps, nb_protocoles)
-    
-    # Création de la liste des tâches : chaque tâche est un couple (sweep_idx, protocole_idx)
-    tasks = [(i, k) for i in 1:n_sweeps for k in 1:nb_protocoles]
+    # Chaque tâche est définie par (theta_idx, sweep_idx, protocole_idx)
+    tasks = [(t_idx, i, k) for t_idx in 1:num_thetas for i in 1:n_sweeps for k in 1:nb_protocoles]
     total_tasks = length(tasks)
+    
+    changements_de_poids = zeros(Float64, n_sweeps, nb_protocoles, num_thetas)
     tasks_done = Threads.Atomic{Int}(0)
     
-    # Parallélisation à plat sur l'ensemble des couples (sweep, protocole)
-    Threads.@threads for (i, k) in tasks
-        changements_de_poids[i, k] = simuler_synapse_brute(val_ampa, val_nmda, val_caT, val_caR, val_caL, val_neck, k)
+    # Parallélisation plate sur l'ensemble de toutes les simulations de tous les thetas
+    Threads.@threads for (t_idx, i, k) in tasks
+        params = native_batch[t_idx]
+        if length(params) == 4
+            val_ampa, val_nmda, val_ca, val_neck = params
+            val_caT = val_ca
+            val_caR = val_ca
+            val_caL = val_ca
+        else
+            val_ampa, val_nmda, val_caT, val_caR, val_caL, val_neck = params
+        end
+        
+        changements_de_poids[i, k, t_idx] = simuler_synapse_brute(val_ampa, val_nmda, val_caT, val_caR, val_caL, val_neck, k)
+        
         c = Threads.atomic_add!(tasks_done, 1) + 1
-        println("      [Sim #$sim_idx] Tâche $c/$total_tasks : Protocole $k/$nb_protocoles, Sweep $i/$n_sweeps traité...")
+        global_sim_idx = start_sim_idx + t_idx - 1
+        println("      [Parallel Sim] Sim #$global_sim_idx : Tâche $c/$total_tasks (Protocole $k, Sweep $i) traitée...")
     end
     
-    # Traitement des résultats par protocole (sequentiel, très rapide car pas de simulation)
-    for k in 1:nb_protocoles
-        protocol_sweeps = changements_de_poids[:, k]
-        sweeps_valides = filter(!isnan, protocol_sweeps)
-        println("   ✓ [Sim #$sim_idx] Protocole $k/$nb_protocoles terminé : $(length(sweeps_valides))/$n_sweeps sweeps valides.")
-        
-        if length(sweeps_valides) < 2
-            # S'il y a 0 ou 1 sweep valide, impossible de calculer une variance pertinente
-            push!(vecteur_cible, NaN, NaN)
+    # Regroupement et affichage des simulations terminées
+    resultats = regrouper_resultats(changements_de_poids, num_thetas, nb_protocoles)
+    for t_idx in 1:num_thetas
+        global_sim_idx = start_sim_idx + t_idx - 1
+        has_nan = any(isnan.(resultats[t_idx]))
+        if has_nan
+            println("   ⚠️ [Parallel Sim] Sim #$global_sim_idx terminée avec des échecs (contient NaN).")
         else
-            # On calcule les stats uniquement sur ce qui a fonctionné
-            push!(vecteur_cible, mean(sweeps_valides), var(sweeps_valides))
+            println("   ✓ [Parallel Sim] Sim #$global_sim_idx terminée avec succès (tous les protocoles valides).")
         end
     end
     
-    return vecteur_cible
+    return resultats
 end
 
-function simulateur_complet_sbi_singlethread(params; nb_protocoles=7, n_sweeps=N_SWEEPS, sim_idx=0)
-    if length(params) == 4
-        val_ampa, val_nmda, val_ca, val_neck = params
-        val_caT = val_ca
-        val_caR = val_ca
-        val_caL = val_ca
-    else
-        val_ampa, val_nmda, val_caT, val_caR, val_caL, val_neck = params
-    end
+# 2. Stratégie Séquentielle (Mono-thread)
+function simulateur_sbi(::SequentialStrategy, batch_params; nb_protocoles=7, n_sweeps=N_SWEEPS, start_sim_idx=1)
+    native_batch = [Vector{Float64}(p) for p in batch_params]
+    num_thetas = length(native_batch)
+    println("\n=== [Sequential Sim] Début du lot avec $num_thetas jeux de paramètres (Simulations #$start_sim_idx à #$(start_sim_idx + num_thetas - 1)) ===")
     
-    vecteur_cible = Float64[]
+    changements_de_poids = zeros(Float64, n_sweeps, nb_protocoles, num_thetas)
+    total_tasks = num_thetas * n_sweeps * nb_protocoles
+    c = 0
     
-    for k in 1:nb_protocoles
-        changements_de_poids = zeros(Float64, n_sweeps)
-        
-        # Boucle SÉQUENTIELLE sur les sweeps
-        for i in 1:n_sweeps
-            changements_de_poids[i] = simuler_synapse_brute(val_ampa, val_nmda, val_caT, val_caR, val_caL, val_neck, k)
-            println("      [Sim #$sim_idx - Protocole $k/$nb_protocoles] Sweep $i/$n_sweeps traité...")
-        end
-        
-        sweeps_valides = filter(!isnan, changements_de_poids)
-        println("   ✓ [Sim #$sim_idx] Protocole $k/$nb_protocoles terminé : $(length(sweeps_valides))/$n_sweeps sweeps valides.")
-        
-        if length(sweeps_valides) < 2
-            push!(vecteur_cible, NaN, NaN)
+    for t_idx in 1:num_thetas
+        global_sim_idx = start_sim_idx + t_idx - 1
+        params = native_batch[t_idx]
+        if length(params) == 4
+            val_ampa, val_nmda, val_ca, val_neck = params
+            val_caT = val_ca
+            val_caR = val_ca
+            val_caL = val_ca
         else
-            push!(vecteur_cible, mean(sweeps_valides), var(sweeps_valides))
+            val_ampa, val_nmda, val_caT, val_caR, val_caL, val_neck = params
         end
-        # Libère la mémoire après chaque protocole
-        GC.gc()
+        
+        for k in 1:nb_protocoles
+            for i in 1:n_sweeps
+                changements_de_poids[i, k, t_idx] = simuler_synapse_brute(val_ampa, val_nmda, val_caT, val_caR, val_caL, val_neck, k)
+                c += 1
+                println("      [Sequential Sim] Sim #$global_sim_idx : Tâche $c/$total_tasks (Protocole $k, Sweep $i) traitée...")
+            end
+        end
     end
     
-    return vecteur_cible
+    resultats = regrouper_resultats(changements_de_poids, num_thetas, nb_protocoles)
+    for t_idx in 1:num_thetas
+        global_sim_idx = start_sim_idx + t_idx - 1
+        has_nan = any(isnan.(resultats[t_idx]))
+        if has_nan
+            println("   ⚠️ [Sequential Sim] Sim #$global_sim_idx terminée avec des échecs (contient NaN).")
+        else
+            println("   ✓ [Sequential Sim] Sim #$global_sim_idx terminée avec succès.")
+        end
+    end
+    
+    return resultats
 end
 
-function simulateur_complet_sbi(params; multithread=true, nb_protocoles=7, n_sweeps=N_SWEEPS)
-    sim_idx = Threads.atomic_add!(SIMULATION_COUNTER, 1) + 1
-    println("\n=== [Simulation #$sim_idx] Début avec paramètres : ", round.(params, digits=4), " ===")
-    res = if multithread
-        simulateur_complet_sbi_multithread(params; nb_protocoles=nb_protocoles, n_sweeps=n_sweeps, sim_idx=sim_idx)
-    else
-        simulateur_complet_sbi_singlethread(params; nb_protocoles=nb_protocoles, n_sweeps=n_sweeps, sim_idx=sim_idx)
+# Fonction utilitaire partagée pour le calcul des statistiques (Façade interne)
+function regrouper_resultats(changements_de_poids, num_thetas, nb_protocoles)
+    resultats = [Float64[] for _ in 1:num_thetas]
+    for t_idx in 1:num_thetas
+        for k in 1:nb_protocoles
+            protocol_sweeps = changements_de_poids[:, k, t_idx]
+            sweeps_valides = filter(!isnan, protocol_sweeps)
+            
+            if length(sweeps_valides) < 2
+                push!(resultats[t_idx], NaN, NaN)
+            else
+                push!(resultats[t_idx], mean(sweeps_valides), var(sweeps_valides))
+            end
+        end
     end
-    # Libère la mémoire (trajectoires) après chaque simulation de batch
     GC.gc()
-    return res
+    return resultats
 end
-
-# Tu peux SUPPRIMER l'ancienne fonction "simulateur_batch_sbi", on n'en a plus besoin !
-

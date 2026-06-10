@@ -37,24 +37,55 @@ def get_args():
 
 jl.include("passerelle.jl")
 
-def simulateur_sbi_hybride(theta):
+def simulateur_sbi_hybride(theta, start_sim_idx=1):
     theta = torch.atleast_2d(theta)
+    
+    # Conversion du lot (batch) de paramètres en liste Python pour Julia
+    batch_params = [[float(p) for p in jeu_de_parametres] for jeu_de_parametres in theta]
+    
+    # Sélection de la stratégie d'exécution en Julia
+    strategy = jl.ParallelStrategy() if USE_MULTITHREAD else jl.SequentialStrategy()
+    
+    # Appel du simulateur Strategy-based en Julia avec l'index de départ
+    resultats_julia = jl.simulateur_sbi(strategy, batch_params, nb_protocoles=NB_PROTOCOLES, n_sweeps=N_SWEEPS, start_sim_idx=start_sim_idx)
+    
     resultats_simules = []
-
-    for jeu_de_parametres in theta:
-        params = [float(p) for p in jeu_de_parametres]
-        
-        vecteur_cible = jl.simulateur_complet_sbi(params, multithread=USE_MULTITHREAD, nb_protocoles=NB_PROTOCOLES, n_sweeps=N_SWEEPS)
-        
-        courbe_pytorch = torch.tensor(list(vecteur_cible), dtype=torch.float32)
+    for res in resultats_julia:
+        courbe_pytorch = torch.tensor(list(res), dtype=torch.float32)
         resultats_simules.append(courbe_pytorch)
         
-        # Libère périodiquement la mémoire Python/Julia accumulée par les wrappers
-        if len(resultats_simules) % 20 == 0:
-            import gc
-            gc.collect()
+    import gc
+    gc.collect()
         
     return torch.stack(resultats_simules)
+
+
+def filtrer_parametres(theta):
+    """
+    Filtre les paramètres d'entrée en amont de la simulation pour écarter
+    les configurations instables ou aberrantes (stiffness ODE ou LTD infinie).
+    """
+    params = theta.flatten().tolist()
+    
+    # Ordre des paramètres : [N_ampa, N_nmda, N_ca*, L_neck]
+    n_ampa, n_nmda, n_ca, l_neck = params
+    
+    # 1. Protection contre les valeurs trop faibles (évite LTD infinie ou division par zéro)
+    if n_ampa < 5.0 or n_nmda < 0.5 or n_ca < 0.2 or l_neck < 0.02:
+        return False
+        
+    # 2. Protection contre les valeurs individuelles trop élevées (évite la stiffness thermique/calcique)
+    if n_nmda > 18.0 or n_ca > 8.0 or l_neck > 1.6:
+        return False
+        
+    # 3. Éviter les combinaisons critiques de charge calcique accumulée :
+    # Plus N_nmda et N_ca sont élevés, et plus L_neck est grand (diffusion lente),
+    # plus la raideur du système d'équations biochimiques explose.
+    charge_calcique = (n_nmda + 2.0 * n_ca) * l_neck
+    if charge_calcique > 22.0:
+        return False
+        
+    return True
 
 
 def main():
@@ -83,29 +114,11 @@ def main():
     if args.box:
         # Ordre : [N_ampa, N_nmda, N_ca*, L_neck]
         prior = BoxUniform(
-            low=torch.tensor([0.0001, 0.0001, 0.0001, 0.0001]), 
-            high=torch.tensor([200.0, 20.0, 10.0, 2.0]) 
+            low=torch.tensor([5, 0.5, 0.2, 0.02]), 
+            high=torch.tensor([200.0, 18.0, 8.0, 1.6]) 
         )
     elif args.gauss:
-        # # 1. Définissez les moyennes pour chaque paramètre (loc)
-        # # Par exemple, le milieu de vos anciennes bornes
-        # moyennes = torch.tensor([100.0, 10.0, 5.0, 5.0, 5.0, 1.0])
 
-        # # 2. Définissez les écarts-types souhaités pour chaque paramètre
-        # # Par exemple, pour que la majorité des tirages tombent dans vos anciennes bornes
-        # ecarts_types = torch.tensor([30.0, 3.0, 1.5, 1.5, 1.5, 0.3])
-
-        # # 3. La MultivariateNormal prend une matrice de covariance. 
-        # # On suppose les paramètres indépendants, on crée donc une matrice diagonale 
-        # # contenant les variances (écart-type au carré)
-        # matrice_covariance = torch.diag(ecarts_types ** 2)
-
-        # # 4. Création du prior
-        # prior = MultivariateNormal(loc=moyennes, covariance_matrix=matrice_covariance)
-
-
-        # On définit les moyennes et écart-types directement dans l'espace logarithmique
-        # (Vos valeurs moyennes converties en log)
         moyennes_log = torch.log(torch.tensor([100.0, 10.0, 5.0, 1.0]))
         ecarts_types_log = torch.tensor([0.3, 0.3, 0.3, 0.3]) # exemple d'écarts-types en espace log
         matrice_covariance_log = torch.diag(ecarts_types_log ** 2)
@@ -120,17 +133,34 @@ def main():
         num_simulations = 100
         tentatives = 0
         
+        batch_size = 12  # Taille du lot (batch) de paramètres simulés en parallèle
         while len(x_sim_list) < num_simulations:
-            tentatives += 1
-            theta = prior.sample((1,))
-            x = simulateur_sbi_hybride(theta)
+            needed = num_simulations - len(x_sim_list)
+            current_batch_size = min(batch_size, needed)
             
-            if not torch.isnan(x).any() and not torch.isinf(x).any():
-                theta_sim_list.append(theta)
-                x_sim_list.append(x)
-                print(f"➜ Simulation {len(x_sim_list)}/{num_simulations} réussie (après {tentatives} tirages au total).")
-            else:
-                print(f"⚠️ Avertissement : Simulation rejetée (contient NaN/Inf ou instabilité). Recherche d'autres paramètres...")
+            # On génère plus de candidats pour compenser le filtrage en amont
+            candidats = prior.sample((current_batch_size * 4,))
+            valides = []
+            for t in candidats:
+                if filtrer_parametres(t.unsqueeze(0)):
+                    valides.append(t)
+                    if len(valides) == current_batch_size:
+                        break
+            
+            if len(valides) == 0:
+                continue
+                
+            theta_batch = torch.stack(valides)
+            tentatives += len(theta_batch)
+            
+            # Simulation en parallèle du lot en passant l'index de départ
+            x_batch = simulateur_sbi_hybride(theta_batch, start_sim_idx=len(x_sim_list) + 1)
+            
+            for t, x in zip(theta_batch, x_batch):
+                if not torch.isnan(x).any() and not torch.isinf(x).any():
+                    theta_sim_list.append(t.unsqueeze(0))
+                    x_sim_list.append(x.unsqueeze(0))
+                    print(f"➜ Simulation {len(x_sim_list)}/{num_simulations} réussie (total tentatives: {tentatives}).")
                 
         theta_sim = torch.cat(theta_sim_list, dim=0)
         x_sim = torch.cat(x_sim_list, dim=0)
