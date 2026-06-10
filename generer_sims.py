@@ -37,7 +37,7 @@ def main():
     jl.seval(f"using Random; Random.seed!({unique_seed})")
     
     # Charger les modules et fonctions Julia
-    jl.include("sbi/passerelle.jl")
+    jl.include("passerelle.jl")
     
     from sbi.utils import BoxUniform
     from torch.distributions import MultivariateNormal, TransformedDistribution, ExpTransform
