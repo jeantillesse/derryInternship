@@ -4,3 +4,7 @@ __pycache__/
 sbi-logs/
 Manifest.toml
 Project.toml
+train_model/
+*.out
+*.err
+*.swp

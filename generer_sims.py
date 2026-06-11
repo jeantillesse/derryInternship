@@ -118,8 +118,8 @@ def main():
     x_sim = torch.cat(x_sim_list, dim=0)
 
     # Sauvegarder les résultats temporaires
-    os.makedirs("sbi/sims_temp", exist_ok=True)
-    out_file = f"sbi/sims_temp/sim_job_{args.task_id}.pkl"
+    os.makedirs("train_model/sims_temp", exist_ok=True)
+    out_file = f"train_model/sims_temp/sim_job_{args.task_id}.pkl"
     with open(out_file, "wb") as f:
         pickle.dump((theta_sim, x_sim), f)
         

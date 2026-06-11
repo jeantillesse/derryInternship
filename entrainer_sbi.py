@@ -37,11 +37,11 @@ def main():
     all_thetas = []
     all_xs = []
 
-    fichiers = glob.glob("sbi/sims_temp/sim_job_*.pkl")
+    fichiers = glob.glob("train_model/sims_temp/sim_job_*.pkl")
     print(f"Trouvé {len(fichiers)} fichiers de simulation.")
 
     if len(fichiers) == 0:
-        print("Erreur : Aucun fichier temporaire trouvé dans sbi/sims_temp/")
+        print("Erreur : Aucun fichier temporaire trouvé dans train_model/sims_temp/")
         return
 
     for f_path in fichiers:
@@ -64,11 +64,11 @@ def main():
     inference.train()
     posterior = inference.build_posterior()
 
-    # Sauvegarde du modèle final dans le dossier sbi
-    with open(f"sbi/{file_save_name}.pkl", "wb") as f:
+    # Sauvegarde du modèle final dans le dossier train_model
+    with open(f"train_model/{file_save_name}.pkl", "wb") as f:
         pickle.dump(posterior, f)
 
-    print(f"✓ Modèle SBI entraîné avec succès et sauvegardé dans 'sbi/{file_save_name}.pkl' !")
+    print(f"✓ Modèle SBI entraîné avec succès et sauvegardé dans 'train_model/{file_save_name}.pkl' !")
 
 if __name__ == "__main__":
     main()
