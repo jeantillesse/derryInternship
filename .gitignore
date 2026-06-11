@@ -8,3 +8,4 @@ train_model/
 *.out
 *.err
 *.swp
+*.pkl

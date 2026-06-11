@@ -11,6 +11,7 @@ def get_args():
     parser = argparse.ArgumentParser(description="Script pour fusionner les simulations et entraîner le modèle SBI")
     parser.add_argument("--gauss", action="store_true", help="Le prior est une gausienne")
     parser.add_argument("--box", action="store_true", help="Le prior est une Box uniforme")
+    parser.add_argument("--run_id", type=str, default=None, help="Si spécifié, filtre les fichiers de simulation par ce run_id")
     return parser.parse_args()
 
 def main():
@@ -37,8 +38,12 @@ def main():
     all_thetas = []
     all_xs = []
 
-    fichiers = glob.glob("train_model/sims_temp/sim_job_*.pkl")
-    print(f"Trouvé {len(fichiers)} fichiers de simulation.")
+    if args.run_id:
+        pattern = f"train_model/sims_temp/sim_job_{args.run_id}_*.pkl"
+    else:
+        pattern = "train_model/sims_temp/sim_job_*.pkl"
+    fichiers = glob.glob(pattern)
+    print(f"Trouvé {len(fichiers)} fichiers de simulation matching pattern '{pattern}'.")
 
     if len(fichiers) == 0:
         print("Erreur : Aucun fichier temporaire trouvé dans train_model/sims_temp/")

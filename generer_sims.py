@@ -21,14 +21,26 @@ def get_args():
     parser.add_argument("--box", action="store_true", help="Le prior est une Box uniforme")
     parser.add_argument("--nb_protocoles", type=int, default=7, choices=range(1, 8), help="Nombre de protocoles à tester (1 à 7)")
     parser.add_argument("--n_sweeps", type=int, default=10, help="Nombre de sweeps par protocole")
+    parser.add_argument("--run_id", type=str, default="", help="Identifiant unique du run pour éviter d'écraser les fichiers")
+    parser.add_argument("--base_seed", type=int, default=42000, help="Seed de base pour la génération aléatoire")
+    parser.add_argument("--seed_offset", type=int, default=None, help="Décalage manuel de la seed de base")
     return parser.parse_args()
 
 def main():
     args = get_args()
     
     # Configuration des graines aléatoires uniques
-    base_seed = 42000
-    unique_seed = base_seed + args.task_id
+    base_seed = args.base_seed
+    if args.seed_offset is not None:
+        seed_offset = args.seed_offset
+    elif args.run_id:
+        import hashlib
+        hash_val = int(hashlib.sha256(args.run_id.encode('utf-8')).hexdigest(), 16)
+        seed_offset = (hash_val % 10000) * 1000  # Espace de 1000 seeds par run
+    else:
+        seed_offset = 0
+        
+    unique_seed = base_seed + seed_offset + args.task_id
     
     torch.manual_seed(unique_seed)
     np.random.seed(unique_seed)
@@ -119,7 +131,10 @@ def main():
 
     # Sauvegarder les résultats temporaires
     os.makedirs("train_model/sims_temp", exist_ok=True)
-    out_file = f"train_model/sims_temp/sim_job_{args.task_id}.pkl"
+    if args.run_id:
+        out_file = f"train_model/sims_temp/sim_job_{args.run_id}_{args.task_id}.pkl"
+    else:
+        out_file = f"train_model/sims_temp/sim_job_{args.task_id}.pkl"
     with open(out_file, "wb") as f:
         pickle.dump((theta_sim, x_sim), f)
         

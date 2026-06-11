@@ -21,7 +21,22 @@ source activate env_sbi
 # Activer votre environnement s'il y en a un
 # source activate env_sbi
 
-echo "Lancement du Job Array tâche n° ${SLURM_ARRAY_TASK_ID} sur le nœud ${SLURMD_NODENAME} avec 128 cœurs"
+# Détermination du RUN_ID unique basé sur la date et l'heure de soumission du job
+if [ -n "$SLURM_ARRAY_JOB_ID" ]; then
+    # Récupère l'heure de soumission du job via scontrol
+    SUBMIT_TIME=$(scontrol show job "$SLURM_ARRAY_JOB_ID" | grep -o 'SubmitTime=[^ ]*' | cut -d= -f2)
+    if [ -n "$SUBMIT_TIME" ] && [ "$SUBMIT_TIME" != "Unknown" ]; then
+        # Format: YYYY-MM-DD_HHhMMmSS (ex: 2026-06-11_16h45m30)
+        RUN_ID=$(echo "$SUBMIT_TIME" | sed 's/T/_/; s/:/h/; s/:/m/')
+    else
+        RUN_ID="job_${SLURM_ARRAY_JOB_ID}"
+    fi
+else
+    # Fallback hors SLURM
+    RUN_ID=$(date +%Y-%m-%d_%Hh%Mm%Ss)
+fi
+
+echo "Lancement du Job Array tâche n° ${SLURM_ARRAY_TASK_ID} sur le nœud ${SLURMD_NODENAME} avec 128 cœurs (RUN_ID: $RUN_ID)"
 
 # Lancer la génération de 12 simulations (soit 840 simulations unitaires)
-python generer_sims.py --task_id ${SLURM_ARRAY_TASK_ID} --nb_sims 12 --box --nb_protocoles 7 --n_sweeps 10
+python generer_sims.py --task_id ${SLURM_ARRAY_TASK_ID} --nb_sims 12 --box --nb_protocoles 7 --n_sweeps 10 --run_id "$RUN_ID"
