@@ -1,7 +1,7 @@
 #!/bin/bash
 #SBATCH --job-name=sbi_array
-#SBATCH --output=sbi/sims_temp/logs/sbi_%A_%a.out
-#SBATCH --error=sbi/sims_temp/logs/sbi_%A_%a.err
+#SBATCH --output=train_model/sims_temp/logs/sbi_%A_%a.out
+#SBATCH --error=train_model/sims_temp/logs/sbi_%A_%a.err
 #SBATCH --array=1-84                  # 84 tâches pour faire 1008 simulations (84 * 12)
 #SBATCH --time=01:00:00               # 1h max (les 12 simulations prennent ~30 min avec 128 cœurs)
 #SBATCH --partition=k2-hipri          # File haute priorité (maximum 3h)
@@ -11,20 +11,24 @@
 #SBATCH --mem=256G                    # Demande 256 Go de RAM sur le nœud (très large pour 128 cœurs)
 
 # Créer les dossiers pour les résultats et les logs
-mkdir -p sbi/sims_temp/logs
+mkdir -p train_model/sims_temp/logs
 
-# Charger l'environnement conda
-module load apps/anaconda3/2024.06/bin
+# Charger le module anaconda
+module purge
+module load apps/anaconda3/2024.10/bin
 
+# Activer proprement l'environnement conda env_sbi
+source $(conda info --base)/etc/profile.d/conda.sh
+conda activate env_sbi
 
-source activate env_sbi
-# Activer votre environnement s'il y en a un
-# source activate env_sbi
+# Résoudre l'erreur 'GLIBCXX_3.4.26 not found' (version de libstdc++ requise par Julia)
+# On force le système à chercher d'abord dans les bibliothèques du Conda env
+export LD_LIBRARY_PATH=$CONDA_PREFIX/lib:$LD_LIBRARY_PATH
 
 # Détermination du RUN_ID unique basé sur la date et l'heure de soumission du job
 if [ -n "$SLURM_ARRAY_JOB_ID" ]; then
     # Récupère l'heure de soumission du job via scontrol
-    SUBMIT_TIME=$(scontrol show job "$SLURM_ARRAY_JOB_ID" | grep -o 'SubmitTime=[^ ]*' | cut -d= -f2)
+    SUBMIT_TIME=$(scontrol show job "$SLURM_ARRAY_JOB_ID" | grep -o 'SubmitTime=[^ ]*' | cut -d= -f2 | head -n 1)
     if [ -n "$SUBMIT_TIME" ] && [ "$SUBMIT_TIME" != "Unknown" ]; then
         # Format: YYYY-MM-DD_HHhMMmSS (ex: 2026-06-11_16h45m30)
         RUN_ID=$(echo "$SUBMIT_TIME" | sed 's/T/_/; s/:/h/; s/:/m/')
