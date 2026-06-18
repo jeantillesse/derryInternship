@@ -5,6 +5,8 @@ import os
 os.environ["JULIA_NUM_THREADS"] = "auto"
 
 os.environ["PYTHON_JULIACALL_HANDLE_SIGNALS"] = "yes"
+os.environ["PYTHON_JULIAPKG_OFFLINE"] = "yes"
+os.environ["PYTHON_JULIAPKG_LOCKFILE"] = "no"
 # 2. IMPORTER JULIACALL EN TOUT PREMIER (AVANT Torch et Numpy)
 from juliacall import Main as jl
 

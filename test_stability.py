@@ -1,6 +1,8 @@
 import os
 os.environ["JULIA_NUM_THREADS"] = "auto"
 os.environ["PYTHON_JULIACALL_HANDLE_SIGNALS"] = "yes"
+os.environ["PYTHON_JULIAPKG_OFFLINE"] = "yes"
+os.environ["PYTHON_JULIAPKG_LOCKFILE"] = "no"
 from juliacall import Main as jl
 import numpy as np
 import torch

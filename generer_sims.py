@@ -5,6 +5,8 @@ import pickle
 # Configuration des variables d'environnement pour Julia (AVANT les imports)
 os.environ["JULIA_NUM_THREADS"] = "auto"
 os.environ["PYTHON_JULIACALL_HANDLE_SIGNALS"] = "yes"
+os.environ["PYTHON_JULIAPKG_OFFLINE"] = "yes"
+os.environ["PYTHON_JULIAPKG_LOCKFILE"] = "no"
 
 # 1. IMPORTER JULIACALL EN TOUT PREMIER (Évite les Segfaults avec Torch)
 from juliacall import Main as jl

@@ -25,6 +25,11 @@ conda activate env_sbi
 # On force le système à chercher d'abord dans les bibliothèques du Conda env
 export LD_LIBRARY_PATH=$CONDA_PREFIX/lib:$LD_LIBRARY_PATH
 
+# Désactiver le locking et la résolution de juliapkg pour le Job Array
+# afin d'éviter les erreurs 'Stale file handle' (accès concurrents sur NFS/Lustre)
+export PYTHON_JULIAPKG_OFFLINE=yes
+export PYTHON_JULIAPKG_LOCKFILE=no
+
 # Détermination du RUN_ID unique basé sur la date et l'heure de soumission du job
 if [ -n "$SLURM_ARRAY_JOB_ID" ]; then
     # Récupère l'heure de soumission du job via scontrol
