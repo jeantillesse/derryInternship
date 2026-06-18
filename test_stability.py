@@ -1,8 +1,32 @@
 import os
+import sys
+import json
+import shutil
+
 os.environ["JULIA_NUM_THREADS"] = "auto"
 os.environ["PYTHON_JULIACALL_HANDLE_SIGNALS"] = "yes"
-os.environ["PYTHON_JULIAPKG_OFFLINE"] = "yes"
-os.environ["PYTHON_JULIAPKG_LOCKFILE"] = "no"
+
+# Contourner la résolution automatique de juliapkg pour éviter les verrous de fichiers
+# concurrents sur le système de fichiers partagé (NFS/Lustre) du cluster.
+if not (os.environ.get("PYTHON_JULIACALL_EXE") and os.environ.get("PYTHON_JULIACALL_PROJECT")):
+    prefix = sys.prefix if sys.prefix != sys.base_prefix else os.getenv("CONDA_PREFIX")
+    if prefix:
+        project = os.path.abspath(os.path.join(prefix, "julia_env"))
+    else:
+        project = os.path.abspath(os.path.join(os.path.expanduser("~"), ".julia", "environments", "pyjuliapkg"))
+    
+    meta_path = os.path.join(project, "pyjuliapkg", "meta.json")
+    if os.path.exists(meta_path):
+        try:
+            with open(meta_path, "r") as f:
+                meta = json.load(f)
+            exe = meta.get("executable")
+            if exe and shutil.which(exe):
+                os.environ["PYTHON_JULIACALL_EXE"] = shutil.which(exe)
+                os.environ["PYTHON_JULIACALL_PROJECT"] = project
+        except Exception:
+            pass
+
 from juliacall import Main as jl
 import numpy as np
 import torch
