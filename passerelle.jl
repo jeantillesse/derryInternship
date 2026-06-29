@@ -141,7 +141,8 @@ function simuler_synapse_brute(val_n_ampa, val_n_nmda, val_n_caT, val_n_caR, val
         w_LTD = 0.3
         w_LTP = 3.5
 
-        delta_W = (NC_final * w_NC + LTD_final * w_LTD + LTP_final * w_LTP) / 100.0
+        N_total = NC_final + LTD_final + LTP_final
+        delta_W = (NC_final * w_NC + LTD_final * w_LTD + LTP_final * w_LTP) / max(1.0, N_total)
 
         return delta_W
 
