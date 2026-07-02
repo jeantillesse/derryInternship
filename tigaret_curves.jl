@@ -39,7 +39,7 @@ function simuler_synapse_courbe(val_ampa, val_nmda, val_ca, val_neck, k)
         age           = DATA_PROTOCOL[!,:age][k],
         injbap        = DATA_PROTOCOL[!,:inj_time][k],
         I_clamp       = DATA_PROTOCOL[!,:injection][k],
-        sampling_rate = 0.1,  # high enough resolution to get nice curves
+        sampling_rate = 0.1,  
         N_ampa        = round(Int, val_ampa),
         N_NMDA        = round(Int, val_nmda),
         N_caT         = round(Int, val_ca),
@@ -74,10 +74,23 @@ function simuler_synapse_courbe(val_ampa, val_nmda, val_ca, val_neck, k)
         abstol = 1e-6, reltol = 1e-5, save_positions = (false, true), verbose = false
     )
 
-    # Return time (in seconds) and weight change (LTP - LTD)
-    # LTP is index 38, LTD is index 37 in result.XD
+    # Return time (in seconds) and normalized weight change in percent
+    # NC is index 36, LTD is index 37, LTP is index 38 in result.XD
     t_sec = result.t ./ 1000.0
-    weight_change = result.XD[38, :] .- result.XD[37, :]
+    
+    NC_curve = result.XD[36, :]
+    LTD_curve = result.XD[37, :]
+    LTP_curve = result.XD[38, :]
+    
+
+    N_total = NC_curve .+ LTD_curve .+ LTP_curve
+    N_total = max.(1.0, N_total)
+    
+    delta_W = (NC_curve .* 1.0 .+ LTD_curve .* 0.3 .+ LTP_curve .* 3.5) ./ N_total
+    
+    # We return the actual weight change: (delta_W - 1.0)
+    # The Python script will multiply by 100 to get percentages
+    weight_change = delta_W .- 1.0
 
     return (t = t_sec, weight_change = weight_change)
 end

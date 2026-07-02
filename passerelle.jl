@@ -165,6 +165,8 @@ abstract type ExecutionStrategy end
 struct SequentialStrategy <: ExecutionStrategy end
 struct ParallelStrategy <: ExecutionStrategy end
 
+const MAPPING_K = [8, 7, 6, 2, 4, 5, 3]
+
 # 1. Stratégie Parallèle (Multi-thread plat sur l'ensemble du lot)
 function simulateur_sbi(::ParallelStrategy, batch_params; nb_protocoles=7, n_sweeps=N_SWEEPS, start_sim_idx=1)
     # Conversion en types natifs Julia pour éviter le lock GIL de Python dans les threads
@@ -191,7 +193,8 @@ function simulateur_sbi(::ParallelStrategy, batch_params; nb_protocoles=7, n_swe
             val_ampa, val_nmda, val_caT, val_caR, val_caL, val_neck = params
         end
         
-        changements_de_poids[i, k, t_idx] = simuler_synapse_brute(val_ampa, val_nmda, val_caT, val_caR, val_caL, val_neck, k)
+        mapped_k = MAPPING_K[k]
+        changements_de_poids[i, k, t_idx] = simuler_synapse_brute(val_ampa, val_nmda, val_caT, val_caR, val_caL, val_neck, mapped_k)
         
         c = Threads.atomic_add!(tasks_done, 1) + 1
         global_sim_idx = start_sim_idx + t_idx - 1
@@ -236,8 +239,9 @@ function simulateur_sbi(::SequentialStrategy, batch_params; nb_protocoles=7, n_s
         end
         
         for k in 1:nb_protocoles
+            mapped_k = MAPPING_K[k]
             for i in 1:n_sweeps
-                changements_de_poids[i, k, t_idx] = simuler_synapse_brute(val_ampa, val_nmda, val_caT, val_caR, val_caL, val_neck, k)
+                changements_de_poids[i, k, t_idx] = simuler_synapse_brute(val_ampa, val_nmda, val_caT, val_caR, val_caL, val_neck, mapped_k)
                 c += 1
                 println("      [Sequential Sim] Sim #$global_sim_idx : Tâche $c/$total_tasks (Protocole $k, Sweep $i) traitée...")
             end
