@@ -165,7 +165,7 @@ abstract type ExecutionStrategy end
 struct SequentialStrategy <: ExecutionStrategy end
 struct ParallelStrategy <: ExecutionStrategy end
 
-const MAPPING_K = [8, 7, 6, 2, 4, 5, 3]
+const MAPPING_K = [4, 3, 8, 5, 6, 7, 2]
 
 # 1. Stratégie Parallèle (Multi-thread plat sur l'ensemble du lot)
 function simulateur_sbi(::ParallelStrategy, batch_params; nb_protocoles=7, n_sweeps=N_SWEEPS, start_sim_idx=1)

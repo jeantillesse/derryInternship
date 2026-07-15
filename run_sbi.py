@@ -226,8 +226,10 @@ def main():
         donnees_brutes = jl.load("Tigaret_data.jld2", "alldata")
 
         # 2. Calcul dynamique de la moyenne et de la variance
+        plot_order_indices = [4, 6, 0, 5, 2, 1, 3]
         cibles = []
-        for protocole in donnees_brutes[:args.nb_protocoles]:
+        for idx in plot_order_indices[:args.nb_protocoles]:
+            protocole = donnees_brutes[idx]
             valeurs = np.array(protocole)
             
             moyenne = np.mean(valeurs)

@@ -42,8 +42,10 @@ jl.include("tigaret_curves.jl")
 print("Loading Tigaret data...")
 donnees_brutes = jl.load("Tigaret_data.jld2", "alldata")
 
+plot_order_indices = [4, 6, 0, 5, 2, 1, 3]
 cibles = []
-for protocole in donnees_brutes[:7]:
+for idx in plot_order_indices:
+    protocole = donnees_brutes[idx]
     valeurs = np.array(protocole)
     moyenne = np.mean(valeurs)
     variance = np.var(valeurs) # variance de population
@@ -57,7 +59,7 @@ print("Running simulations and plotting...")
 # Define parallel computation function in Julia to bypass Python GIL
 # We MUST convert python lists to native Julia Vectors BEFORE entering the multithreading loop
 jl.seval("""
-const MAPPING_K = [8, 7, 6, 2, 4, 5, 3]
+const MAPPING_K = [4, 3, 8, 5, 6, 7, 2]
 
 function compute_everything_parallel(py_params_list)
     native_params = [Vector{Float64}(p) for p in py_params_list]
@@ -112,7 +114,7 @@ samples_results, base_results = jl.compute_everything_parallel(params_list)
 fig, axes = plt.subplots(3, 3, figsize=(15, 12))
 axes = axes.flatten()
 
-MAPPING_K_PY = [6, 7, 6, 2, 4, 5, 3]
+MAPPING_K_PY = [4, 3, 8, 5, 6, 7, 2]
 
 for k in range(1, 8):
     ax = axes[k-1]
@@ -161,7 +163,7 @@ for k in range(1, 8):
         y_max_target = max(y_max_target, np.max(w_pct_def))
 
     # Experimental data
-    exp_data = np.array(donnees_brutes[k-1])
+    exp_data = np.array(donnees_brutes[plot_order_indices[k-1]])
     exp_mean_pct = (np.mean(exp_data) - 1.0) * 100.0
     exp_std_pct = np.std(exp_data) * 100.0
     ax.errorbar([max_t], [exp_mean_pct], yerr=[exp_std_pct], fmt='o', color='red', capsize=5, label="Tigaret Data")
