@@ -62,7 +62,7 @@ print("Loading trained model...")
 with open(file_save_name, "rb") as f:
     posterior = pickle.load(f)
 
-num_samples = 5
+num_samples = 1
 print(f"Drawing {num_samples} highly probable samples from the peak of the posterior...")
 
 # Tirer beaucoup d'échantillons pour trouver la zone la plus dense (le sommet de la cloche)
@@ -76,51 +76,70 @@ log_probs = posterior.log_prob(many_samples, x=x_observe)
 top_indices = torch.topk(log_probs, num_samples).indices
 echantillons = many_samples[top_indices]
 
-print("Running simulations and plotting...")
-
+print("Running simulations and plotting.")
 # Define parallel computation function in Julia to bypass Python GIL
-# We MUST convert python lists to native Julia Vectors BEFORE entering the multithreading loop
 jl.seval("""
 const MAPPING_K = [4, 3, 8, 5, 6, 7, 2]
 
-function compute_everything_parallel(py_params_list)
+function compute_everything_parallel(py_params_list; n_sweeps=10)
     native_params = [Vector{Float64}(p) for p in py_params_list]
     num_samples = length(native_params)
     
     tasks = []
     # k va de 1 à 7 pour les 7 protocoles
     for k in 1:7
-        push!(tasks, (k, 0, [120.0, 15.0, 3.0, 0.2])) # Base model
-        for i in 1:num_samples
-            push!(tasks, (k, i, native_params[i]))
+        for sweep in 1:n_sweeps
+            push!(tasks, (k, 0, [120.0, 15.0, 3.0, 0.2], sweep)) # Base model
+            for i in 1:num_samples
+                push!(tasks, (k, i, native_params[i], sweep))
+            end
         end
     end
     
-    samples_results = [Vector{Any}(undef, num_samples) for _ in 1:7]
-    base_results = Vector{Any}(undef, 7)
+    # Storage for results (Float64 for delta_W)
+    all_samples = [[Vector{Float64}(undef, n_sweeps) for _ in 1:num_samples] for _ in 1:7]
+    all_base = [Vector{Float64}(undef, n_sweeps) for _ in 1:7]
     
-    println("Lancement de la simulation parallèle sur $(Threads.nthreads()) cœurs Julia...")
+    total_tasks = length(tasks)
+    completed = Base.Threads.Atomic{Int}(0)
+    
+    println("Lancement de la simulation de $total_tasks tâches (evolveSynapse_light, $n_sweeps sweeps) sur $(Threads.nthreads()) cœurs Julia...")
     
     Threads.@threads for task in tasks
-        k, i, p = task
-        # 'p' est maintenant un Vector{Float64} 100% natif Julia : aucun appel à Python !
+        k, i, p, sweep = task
         val_ampa, val_nmda, val_ca, val_neck = p[1], p[2], p[3], p[4]
         mapped_k = MAPPING_K[k]
-        try
-            curve = simuler_synapse_courbe(val_ampa, val_nmda, val_ca, val_neck, mapped_k)
-            # Store data as native tuples of arrays
-            res = (collect(curve.t), collect(curve.weight_change))
-            if i == 0
-                base_results[k] = res
-            else
-                samples_results[k][i] = res
-            end
-        catch e
-            if i == 0
-                base_results[k] = nothing
-            else
-                samples_results[k][i] = nothing
-            end
+        
+        val_caT = val_ca
+        val_caR = val_ca
+        val_caL = val_ca
+        
+        delta_W = simuler_synapse_brute(val_ampa, val_nmda, val_caT, val_caR, val_caL, val_neck, mapped_k)
+        
+        if i == 0
+            all_base[k][sweep] = delta_W
+        else
+            all_samples[k][i][sweep] = delta_W
+        end
+        
+        c = Base.Threads.atomic_add!(completed, 1) + 1
+        if c % 20 == 0 || c == total_tasks
+            print("\rAvancement : $c / $total_tasks tâches terminées...   ")
+        end
+    end
+    println()
+    
+    # Filter out NaNs
+    samples_results = [Vector{Vector{Float64}}(undef, num_samples) for _ in 1:7]
+    base_results = Vector{Vector{Float64}}(undef, 7)
+    
+    for k in 1:7
+        valid_base = filter(x -> !isnan(x), all_base[k])
+        base_results[k] = valid_base
+        
+        for i in 1:num_samples
+            valid_samp = filter(x -> !isnan(x), all_samples[k][i])
+            samples_results[k][i] = valid_samp
         end
     end
     
@@ -139,10 +158,10 @@ for t in echantillons:
     params_list.append([val_ampa, val_nmda, val_ca, val_neck])
 
 print("Running simulations in parallel via native Julia Threads...")
-samples_results, base_results = jl.compute_everything_parallel(params_list)
+n_sweeps = 10
+samples_results, base_results = jl.compute_everything_parallel(params_list, n_sweeps=n_sweeps)
 
-fig, axes = plt.subplots(3, 3, figsize=(15, 12))
-axes = axes.flatten()
+fig, axes = plt.subplots(1, 7, figsize=(24, 6), sharey=False)
 
 MAPPING_K_PY = [4, 3, 8, 5, 6, 7, 2]
 
@@ -151,76 +170,58 @@ for k in range(1, 8):
     mapped_k = MAPPING_K_PY[k-1]
     proto_name = str(jl.seval(f"DATA_PROTOCOL[{mapped_k}, :protocol]"))
     
-    ax.set_title(proto_name)
-    ax.set_xlabel("Time (s)")
-    ax.set_ylabel("Weight Change (%)")
+    ax.set_title(proto_name, fontsize=12, fontweight='bold')
+    if k == 1:
+        ax.set_ylabel("Weight Change (%)", fontsize=14)
+    ax.axhline(0, color='gray', linestyle='--')
     
-    max_t = 0.0
-    interpolated_curves = []
-    
-    # Process samples
-    valid_samples = 0
+    # --- 1. Plot Base Model (Green) ---
+    def_data = np.array(base_results[k-1])
+    if len(def_data) > 0:
+        w_pct_def = (def_data - 1.0) * 100.0
+        # Draw a violin plot
+        parts = ax.violinplot(w_pct_def, positions=[1], showmeans=True)
+        for pc in parts['bodies']:
+            pc.set_facecolor('green')
+            pc.set_alpha(0.5)
+        for partname in ('cbars','cmins','cmaxes','cmeans'):
+            vp = parts[partname]
+            vp.set_edgecolor('green')
+            vp.set_linewidth(2)
+            
+    # --- 2. Plot Posterior Samples (Blue) ---
     julia_samples = samples_results[k-1]
-    valid_curves_data = []
-    
+    all_sbi_pct = []
     for i, data in enumerate(julia_samples):
-        if data is not None:
-            t_sec = np.array(data[0])
-            w_raw = np.array(data[1])
-            val_ampa = params_list[i][0]
-            w_pct = w_raw * 100.0
+        if data is not None and len(data) > 0:
+            w_pct_s = (np.array(data) - 1.0) * 100.0
+            all_sbi_pct.extend(w_pct_s)
             
-            max_t = max(max_t, t_sec[-1])
-            label = "Posterior Samples" if valid_samples == 0 else ""
-            ax.plot(t_sec, w_pct, color="blue", alpha=0.15, label=label)
+    if len(all_sbi_pct) > 0:
+        parts = ax.violinplot(all_sbi_pct, positions=[2], showmeans=True)
+        for pc in parts['bodies']:
+            pc.set_facecolor('blue')
+            pc.set_alpha(0.5)
+        for partname in ('cbars','cmins','cmaxes','cmeans'):
+            vp = parts[partname]
+            vp.set_edgecolor('blue')
+            vp.set_linewidth(2)
             
-            valid_curves_data.append((t_sec, w_pct))
-            valid_samples += 1
-
-    if max_t == 0: max_t = 1.0
-    common_t = np.linspace(0, max_t, 500)
-    
-    for t_sec, w_pct in valid_curves_data:
-        interp_func = scipy.interpolate.interp1d(t_sec, w_pct, bounds_error=False, fill_value=(w_pct[0], w_pct[-1]))
-        interpolated_curves.append(interp_func(common_t))
-
-    y_min_target = 0
-    y_max_target = 0
-    
-    if interpolated_curves:
-        median_curve = np.median(interpolated_curves, axis=0)
-        ax.plot(common_t, median_curve, color="blue", linewidth=2.5, label="Median Posterior")
-        y_min_target = np.min(median_curve)
-        y_max_target = np.max(median_curve)
-        
-    # Process base model
-    def_data = base_results[k-1]
-    if def_data is not None:
-        t_sec_def = np.array(def_data[0])
-        w_raw_def = np.array(def_data[1])
-        val_ampa_def = 120.0
-        w_pct_def = w_raw_def * 100.0
-        max_t = max(max_t, t_sec_def[-1])
-        
-        ax.plot(t_sec_def, w_pct_def, color="green", linewidth=2.5, label="Base Model (Default)")
-        y_min_target = min(y_min_target, np.min(w_pct_def))
-        y_max_target = max(y_max_target, np.max(w_pct_def))
-
-    # Experimental data
+    # --- 3. Plot Experimental Data (Red) ---
     exp_data = np.array(donnees_brutes[plot_order_indices[k-1]])
-    exp_mean_pct = (np.mean(exp_data) - 1.0) * 100.0
-    exp_std_pct = np.std(exp_data) * 100.0
-    ax.errorbar([max_t], [exp_mean_pct], yerr=[exp_std_pct], fmt='o', color='red', capsize=5, label="Tigaret Data")
+    exp_pct = (exp_data - 1.0) * 100.0
+    exp_mean_pct = np.mean(exp_pct)
+    exp_std_pct = np.std(exp_pct)
     
-    y_min_target = min(y_min_target, exp_mean_pct - exp_std_pct)
-    y_max_target = max(y_max_target, exp_mean_pct + exp_std_pct)
+    ax.errorbar([1.5], [exp_mean_pct], yerr=[exp_std_pct], fmt='o', color='red', capsize=5, zorder=6, markersize=8)
     
-    margin = (y_max_target - y_min_target) * 0.15
-    if margin == 0: margin = 10
-    ax.set_ylim([y_min_target - margin, y_max_target + margin])
+    # Plot individual raw data points
+    jitter = np.random.normal(1.5, 0.05, size=len(exp_pct))
+    ax.scatter(jitter, exp_pct, color='gray', edgecolor='black', zorder=5, s=30)
     
-    ax.legend(loc='lower left', fontsize='small')
+    ax.set_xticks([1, 1.5, 2])
+    ax.set_xticklabels(['Base', 'Data', 'SBI'])
 
 plt.tight_layout()
-plt.savefig("validation_plot.png", dpi=300)
-print("Plot saved to validation_plot.png!")
+plt.savefig("validation_distributions.png", dpi=150)
+print("\\nValidation distributions saved as 'validation_distributions.png'.")

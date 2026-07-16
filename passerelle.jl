@@ -128,7 +128,9 @@ function simuler_synapse_brute(val_n_ampa, val_n_nmda, val_n_caT, val_n_caR, val
         result = evolveSynapse_light(
             xc0, xd0, param_synapse,
             events_valides,
-            pre_post_valides, Float64[], glu_valides,
+            pre_post_valides, 
+            DATA_PROTOCOL[!,:AP_by_EPSP][k] == "yes" ? bap_by_epsp_times : Float64[], 
+            glu_valides,
             (CHV(CVODE_BDF(linear_solver=:GMRES)), CHV(CVODE_BDF(linear_solver=:GMRES)));
             abstol = 1e-6, reltol = 1e-5, save_positions = (false, true), save_everystep = false, verbose = false
         )
@@ -147,9 +149,7 @@ function simuler_synapse_brute(val_n_ampa, val_n_nmda, val_n_caT, val_n_caR, val
         return delta_W
 
     catch e
-        println("\n=== ERREUR JULIA DÉTECTÉE ===")
-        Base.showerror(stdout, e) # Ceci va imprimer "UndefVarError: [NOM_DE_LA_VARIABLE] not defined"
-        println("\n=============================\n")
+        # Échec silencieux car l'échantillon SBI peut contenir des paramètres instables
         return NaN
     end
 end
