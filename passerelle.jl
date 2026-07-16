@@ -95,7 +95,7 @@ function simuler_synapse_brute(val_n_ampa, val_n_nmda, val_n_caT, val_n_caR, val
         )
 
         param_synapse = SynapseParams(
-            t_end         = isempty(events_times) ? start + 500.0 : events_times[end] + 500.0,
+            t_end         = isempty(events_times) ? start + 1.5e5 : events_times[end] + 1.5e5,
             soma_dist     = 200.0,
             temp_rates    = DATA_PROTOCOL[!,:temp][k],
             Ca_ext        = DATA_PROTOCOL[!,:exca][k],
@@ -115,8 +115,11 @@ function simuler_synapse_brute(val_n_ampa, val_n_nmda, val_n_caT, val_n_caR, val
         xc0 = initial_conditions_continuous_temp(param_synapse)
         xd0 = initial_conditions_discrete(param_synapse)
 
+        p_rel = param_synapse.p_release
+        pre_synapse = PreSynapseParams(h = (p_rel[4] + p_rel[3]/(1 + exp(p_rel[1] * (DATA_PROTOCOL[!,:exca][k] - p_rel[2])))))
+
         is_glu_release, _, _, _, _, bap_by_epsp_times = stp(
-            param_synapse.t_end, PreSynapseParams(h=0),
+            param_synapse.t_end, pre_synapse,
             events_times, is_pre_or_post_event, algo=CHV(CVODE_BDF())
         )
 
