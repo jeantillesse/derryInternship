@@ -3,7 +3,7 @@
 #SBATCH --output=train_model/sims_temp/logs/sbi_%A_%a.out
 #SBATCH --error=train_model/sims_temp/logs/sbi_%A_%a.err
 #SBATCH --array=1-84                  # 84 tâches pour faire 1008 simulations (84 * 12)
-#SBATCH --time=01:00:00               # 1h max (les 12 simulations prennent ~30 min avec 128 cœurs)
+#SBATCH --time=03:00:00               # 1h max (les 12 simulations prennent ~30 min avec 128 cœurs)
 #SBATCH --partition=k2-hipri          # File haute priorité (maximum 3h)
 #SBATCH --nodes=1                     # 1 nœud complet par tâche
 #SBATCH --ntasks=1

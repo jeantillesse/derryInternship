@@ -89,7 +89,7 @@ function compute_everything_parallel(py_params_list; n_sweeps=10)
     # k va de 1 à 7 pour les 7 protocoles
     for k in 1:7
         for sweep in 1:n_sweeps
-            push!(tasks, (k, 0, [120.0, 15.0, 3.0, 0.2], sweep)) # Base model
+            push!(tasks, (k, 0, [120.0, 15.0, 3.0, 0.2, 80000.0, 13000.0], sweep)) # Base model
             for i in 1:num_samples
                 push!(tasks, (k, i, native_params[i], sweep))
             end
@@ -107,14 +107,14 @@ function compute_everything_parallel(py_params_list; n_sweeps=10)
     
     Threads.@threads for task in tasks
         k, i, p, sweep = task
-        val_ampa, val_nmda, val_ca, val_neck = p[1], p[2], p[3], p[4]
+        val_ampa, val_nmda, val_ca, val_neck, val_K_D, val_K_P = p[1], p[2], p[3], p[4], p[5], p[6]
         mapped_k = MAPPING_K[k]
         
         val_caT = val_ca
         val_caR = val_ca
         val_caL = val_ca
         
-        delta_W = simuler_synapse_brute(val_ampa, val_nmda, val_caT, val_caR, val_caL, val_neck, mapped_k)
+        delta_W = simuler_synapse_brute(val_ampa, val_nmda, val_caT, val_caR, val_caL, val_neck, val_K_D, val_K_P, mapped_k)
         
         if i == 0
             all_base[k][sweep] = delta_W

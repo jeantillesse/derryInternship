@@ -65,7 +65,7 @@ function evolveSynapse_light(xc0::Vector{𝒯}, xd0, p_synapse::SynapseParams,
 	return (XD = reshape(current_xd, :, 1),)
 end
 
-function simuler_synapse_brute(val_n_ampa, val_n_nmda, val_n_caT, val_n_caR, val_n_caL, val_l_neck, k)
+function simuler_synapse_brute(val_n_ampa, val_n_nmda, val_n_caT, val_n_caR, val_n_caL, val_l_neck, val_K_D, val_K_P, k)
     # Limites de sécurité strictes (pour éviter les synapses "vides" ou aberrantes)
     val_l_neck = max(val_l_neck, 0.05) 
     val_n_ampa = max(1.0, val_n_ampa)
@@ -109,7 +109,9 @@ function simuler_synapse_brute(val_n_ampa, val_n_nmda, val_n_caT, val_n_caR, val
             N_caT  = round(Int, val_n_caT),
             N_caR  = round(Int, val_n_caR),
             N_caL  = round(Int, val_n_caL),
-            L_neck = val_l_neck
+            L_neck = val_l_neck,
+            K_D    = val_K_D,
+            K_P    = val_K_P
         )
 
         xc0 = initial_conditions_continuous_temp(param_synapse)
@@ -189,15 +191,18 @@ function simulateur_sbi(::ParallelStrategy, batch_params; nb_protocoles=7, n_swe
         params = native_batch[t_idx]
         if length(params) == 4
             val_ampa, val_nmda, val_ca, val_neck = params
-            val_caT = val_ca
-            val_caR = val_ca
-            val_caL = val_ca
+            val_K_D, val_K_P = 80000.0, 13000.0
+            val_caT, val_caR, val_caL = val_ca, val_ca, val_ca
+        elseif length(params) == 6
+            val_ampa, val_nmda, val_ca, val_neck, val_K_D, val_K_P = params
+            val_caT, val_caR, val_caL = val_ca, val_ca, val_ca
         else
             val_ampa, val_nmda, val_caT, val_caR, val_caL, val_neck = params
+            val_K_D, val_K_P = 80000.0, 13000.0
         end
         
         mapped_k = MAPPING_K[k]
-        changements_de_poids[i, k, t_idx] = simuler_synapse_brute(val_ampa, val_nmda, val_caT, val_caR, val_caL, val_neck, mapped_k)
+        changements_de_poids[i, k, t_idx] = simuler_synapse_brute(val_ampa, val_nmda, val_caT, val_caR, val_caL, val_neck, val_K_D, val_K_P, mapped_k)
         
         c = Threads.atomic_add!(tasks_done, 1) + 1
         global_sim_idx = start_sim_idx + t_idx - 1
@@ -234,17 +239,20 @@ function simulateur_sbi(::SequentialStrategy, batch_params; nb_protocoles=7, n_s
         params = native_batch[t_idx]
         if length(params) == 4
             val_ampa, val_nmda, val_ca, val_neck = params
-            val_caT = val_ca
-            val_caR = val_ca
-            val_caL = val_ca
+            val_K_D, val_K_P = 80000.0, 13000.0
+            val_caT, val_caR, val_caL = val_ca, val_ca, val_ca
+        elseif length(params) == 6
+            val_ampa, val_nmda, val_ca, val_neck, val_K_D, val_K_P = params
+            val_caT, val_caR, val_caL = val_ca, val_ca, val_ca
         else
             val_ampa, val_nmda, val_caT, val_caR, val_caL, val_neck = params
+            val_K_D, val_K_P = 80000.0, 13000.0
         end
         
         for k in 1:nb_protocoles
             mapped_k = MAPPING_K[k]
             for i in 1:n_sweeps
-                changements_de_poids[i, k, t_idx] = simuler_synapse_brute(val_ampa, val_nmda, val_caT, val_caR, val_caL, val_neck, mapped_k)
+                changements_de_poids[i, k, t_idx] = simuler_synapse_brute(val_ampa, val_nmda, val_caT, val_caR, val_caL, val_neck, val_K_D, val_K_P, mapped_k)
                 c += 1
                 println("      [Sequential Sim] Sim #$global_sim_idx : Tâche $c/$total_tasks (Protocole $k, Sweep $i) traitée...")
             end
