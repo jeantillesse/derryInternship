@@ -23,8 +23,8 @@ def main():
     if args.box:
         file_save_name = "modele_entraine_box"
         prior = BoxUniform(
-            low=torch.tensor([5.0, 0.5, 0.2, 0.02, 20000.0, 5000.0]), 
-            high=torch.tensor([200.0, 18.0, 8.0, 1.6, 150000.0, 40000.0]) 
+            low=torch.tensor([5.0, 0.5, 0.2, 0.02, 1000.0, 1000.0]), 
+            high=torch.tensor([200.0, 18.0, 8.0, 1.6, 150000.0, 150000.0]) 
         )
     elif args.gauss:
         file_save_name = "modele_entraine_gauss"

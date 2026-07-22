@@ -76,6 +76,14 @@ log_probs = posterior.log_prob(many_samples, x=x_observe)
 top_indices = torch.topk(log_probs, num_samples).indices
 echantillons = many_samples[top_indices]
 
+print("\n--- Paramètres choisis par l'IA ---")
+labels = ["N_ampa", "N_nmda", "N_ca*", "L_neck", "K_D", "K_P"]
+for idx, sample in enumerate(echantillons):
+    print(f"Modèle {idx+1} :")
+    for nom, val in zip(labels, sample):
+        print(f"  {nom} = {val.item():.4f}")
+print("-----------------------------------\n")
+
 print("Running simulations and plotting.")
 # Define parallel computation function in Julia to bypass Python GIL
 jl.seval("""
@@ -149,13 +157,7 @@ end
 
 params_list = []
 for t in echantillons:
-    params = t.numpy().tolist()
-    if len(params) == 4:
-        val_ampa, val_nmda, val_ca, val_neck = params
-    else:
-        val_ampa, val_nmda, val_caT, val_caR, val_caL, val_neck = params
-        val_ca = val_caT
-    params_list.append([val_ampa, val_nmda, val_ca, val_neck])
+    params_list.append(t.numpy().tolist())
 
 print("Running simulations in parallel via native Julia Threads...")
 n_sweeps = 10

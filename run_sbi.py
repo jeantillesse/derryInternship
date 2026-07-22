@@ -95,7 +95,7 @@ def filtrer_parametres(theta):
     n_ampa, n_nmda, n_ca, l_neck, k_d, k_p = params
     
     # 1. Protection contre les valeurs trop faibles (évite LTD infinie ou division par zéro)
-    if n_ampa < 5.0 or n_nmda < 0.5 or n_ca < 0.2 or l_neck < 0.02 or k_d < 20000.0 or k_p < 5000.0:
+    if n_ampa < 5.0 or n_nmda < 0.5 or n_ca < 0.2 or l_neck < 0.02 or k_d < 1000.0 or k_p < 1000.0:
         return False
         
     # 2. Protection contre les valeurs individuelles trop élevées (évite la stiffness thermique/calcique)
@@ -138,8 +138,8 @@ def main():
     if args.box:
         # Ordre : [N_ampa, N_nmda, N_ca*, L_neck, K_D, K_P]
         prior = BoxUniform(
-            low=torch.tensor([5.0, 0.5, 0.2, 0.02, 20000.0, 5000.0]), 
-            high=torch.tensor([200.0, 18.0, 8.0, 1.6, 150000.0, 40000.0]) 
+            low=torch.tensor([5.0, 0.5, 0.2, 0.02, 1000.0, 1000.0]), 
+            high=torch.tensor([200.0, 18.0, 8.0, 1.6, 150000.0, 150000.0]) 
         )
     elif args.gauss:
 
@@ -246,8 +246,9 @@ def main():
 
         print("\nGénération terminée ! Vous pouvez maintenant analyser les résultats.")
 
+        valeurs_par_defaut = torch.tensor([120.0, 15.0, 3.0, 0.2, 80000.0, 13000.0])
         fig, axes = pairplot(echantillons, labels=["N_ampa", "N_nmda", "N_ca*", "L_neck", "K_D", "K_P"],
-        points=[120.0, 15.0, 3.0, 0.2, 80000.0, 13000.0], points_colors=["red"])
+                             points=valeurs_par_defaut, points_colors=["red"])
         plt.show()
 
 if __name__ == "__main__":
