@@ -62,7 +62,7 @@ print("Loading trained model...")
 with open(file_save_name, "rb") as f:
     posterior = pickle.load(f)
 
-num_samples = 1
+num_samples = 50
 print(f"Drawing {num_samples} highly probable samples from the peak of the posterior...")
 
 # Tirer beaucoup d'échantillons pour trouver la zone la plus dense (le sommet de la cloche)
@@ -72,19 +72,10 @@ many_samples = posterior.sample((large_batch_size,), x=x_observe, show_progress_
 # Calculer la probabilité (log_prob) de chaque échantillon
 log_probs = posterior.log_prob(many_samples, x=x_observe)
 
-# Garder uniquement les 5 échantillons avec la plus haute probabilité (le sommet de la distribution)
+# Garder uniquement les échantillons avec la plus haute probabilité (le sommet de la distribution)
 top_indices = torch.topk(log_probs, num_samples).indices
 echantillons = many_samples[top_indices]
 
-print("\n--- Paramètres choisis par l'IA ---")
-labels = ["N_ampa", "N_nmda", "N_ca*", "L_neck", "K_D", "K_P"]
-for idx, sample in enumerate(echantillons):
-    print(f"Modèle {idx+1} :")
-    for nom, val in zip(labels, sample):
-        print(f"  {nom} = {val.item():.4f}")
-print("-----------------------------------\n")
-
-print("Running simulations and plotting.")
 # Define parallel computation function in Julia to bypass Python GIL
 jl.seval("""
 const MAPPING_K = [4, 3, 8, 5, 6, 7, 2]
@@ -155,11 +146,46 @@ function compute_everything_parallel(py_params_list; n_sweeps=10)
 end
 """)
 
-params_list = []
-for t in echantillons:
-    params_list.append(t.numpy().tolist())
+print(f"\nOptimization Phase: Evaluating {num_samples} candidates on the true simulator (2 sweeps each)...")
+params_list = [t.numpy().tolist() for t in echantillons]
+samples_results, _ = jl.compute_everything_parallel(params_list, n_sweeps=2)
 
-print("Running simulations in parallel via native Julia Threads...")
+best_mse = float('inf')
+best_idx = 0
+
+for i in range(num_samples):
+    mse = 0
+    valid = True
+    for k in range(7):
+        res = samples_results[k][i]
+        if len(res) == 0:
+            valid = False
+            break
+        m = np.mean(res)
+        target_m = cibles[2*k]
+        mse += (m - target_m)**2
+    
+    if not valid:
+        continue
+        
+    if mse < best_mse:
+        best_mse = mse
+        best_idx = i
+
+print(f"Meilleur candidat trouvé (index {best_idx}) avec MSE = {best_mse:.2f}")
+
+# Keep only the best sample
+best_sample = echantillons[best_idx]
+echantillons = best_sample.unsqueeze(0)
+
+print("\n--- Paramètres optimaux choisis par l'IA ---")
+labels = ["N_ampa", "N_nmda", "N_ca*", "L_neck", "K_D", "K_P"]
+for nom, val in zip(labels, best_sample):
+    print(f"  {nom} = {val.item():.4f}")
+print("-----------------------------------\n")
+
+print("Running final simulation (10 sweeps) and plotting...")
+params_list = [best_sample.numpy().tolist()]
 n_sweeps = 10
 samples_results, base_results = jl.compute_everything_parallel(params_list, n_sweeps=n_sweeps)
 
