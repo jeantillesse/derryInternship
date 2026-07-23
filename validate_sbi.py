@@ -35,7 +35,7 @@ if not (os.environ.get("PYTHON_JULIACALL_EXE") and os.environ.get("PYTHON_JULIAC
 from juliacall import Main as jl
 
 print("Loading Julia dependencies...")
-jl.seval('using Pkg; Pkg.activate(".")')
+jl.seval('using Pkg; Pkg.activate("..")')
 jl.seval("using JLD2, FileIO, Statistics")
 jl.include("passerelle.jl")
 jl.include("tigaret_curves.jl")
