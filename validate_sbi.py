@@ -74,7 +74,7 @@ many_samples = posterior.sample((large_batch_size,), x=x_observe, show_progress_
 # Calculer la probabilité (log_prob) de chaque échantillon
 log_probs = posterior.log_prob(many_samples, x=x_observe)
 
-# Garder uniquement les échantillons avec la plus haute probabilité (le sommet de la distribution)
+# Garder uniquement les 50 échantillons avec la plus haute probabilité (le sommet de la distribution)
 top_indices = torch.topk(log_probs, num_samples).indices
 echantillons = many_samples[top_indices]
 
@@ -218,8 +218,27 @@ for k in range(1, 8):
             vp = parts[partname]
             vp.set_edgecolor('green')
             vp.set_linewidth(2)
+        # Plot individual raw data points
+        jitter = np.random.normal(1, 0.05, size=len(w_pct_def))
+        ax.scatter(jitter, w_pct_def, color='black', alpha=0.5, zorder=5, s=20)
             
-    # --- 2. Plot Posterior Samples (Blue) ---
+    # --- 2. Plot Experimental Data (Red) ---
+    exp_data = np.array(donnees_brutes[plot_order_indices[k-1]])
+    exp_pct = (exp_data - 1.0) * 100.0
+    if len(exp_pct) > 0:
+        parts = ax.violinplot(exp_pct, positions=[2], showmeans=True)
+        for pc in parts['bodies']:
+            pc.set_facecolor('red')
+            pc.set_alpha(0.5)
+        for partname in ('cbars','cmins','cmaxes','cmeans'):
+            vp = parts[partname]
+            vp.set_edgecolor('red')
+            vp.set_linewidth(2)
+        # Plot individual raw data points
+        jitter = np.random.normal(2, 0.05, size=len(exp_pct))
+        ax.scatter(jitter, exp_pct, color='black', alpha=0.5, zorder=5, s=20)
+            
+    # --- 3. Plot Posterior Samples (Blue) ---
     julia_samples = samples_results[k-1]
     all_sbi_pct = []
     for i, data in enumerate(julia_samples):
@@ -228,7 +247,7 @@ for k in range(1, 8):
             all_sbi_pct.extend(w_pct_s)
             
     if len(all_sbi_pct) > 0:
-        parts = ax.violinplot(all_sbi_pct, positions=[2], showmeans=True)
+        parts = ax.violinplot(all_sbi_pct, positions=[3], showmeans=True)
         for pc in parts['bodies']:
             pc.set_facecolor('blue')
             pc.set_alpha(0.5)
@@ -236,20 +255,11 @@ for k in range(1, 8):
             vp = parts[partname]
             vp.set_edgecolor('blue')
             vp.set_linewidth(2)
-            
-    # --- 3. Plot Experimental Data (Red) ---
-    exp_data = np.array(donnees_brutes[plot_order_indices[k-1]])
-    exp_pct = (exp_data - 1.0) * 100.0
-    exp_mean_pct = np.mean(exp_pct)
-    exp_std_pct = np.std(exp_pct)
+        # Plot individual raw data points
+        jitter = np.random.normal(3, 0.05, size=len(all_sbi_pct))
+        ax.scatter(jitter, all_sbi_pct, color='black', alpha=0.5, zorder=5, s=20)
     
-    ax.errorbar([1.5], [exp_mean_pct], yerr=[exp_std_pct], fmt='o', color='red', capsize=5, zorder=6, markersize=8)
-    
-    # Plot individual raw data points
-    jitter = np.random.normal(1.5, 0.05, size=len(exp_pct))
-    ax.scatter(jitter, exp_pct, color='gray', edgecolor='black', zorder=5, s=30)
-    
-    ax.set_xticks([1, 1.5, 2])
+    ax.set_xticks([1, 2, 3])
     ax.set_xticklabels(['Base', 'Data', 'SBI'])
 
 plt.tight_layout()
